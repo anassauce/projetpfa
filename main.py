@@ -1,58 +1,123 @@
+import instaloader
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.utils import resample
+import joblib  # Pour sauvegarder et charger le modèle
 import matplotlib.pyplot as plt
-import seaborn as sns
+import os
 
-# Charger votre dataset
-df = pd.read_csv('dataset.csv')
+# Chemin pour sauvegarder et charger le modèle
+model_filename = "decision_tree_instagram_model.pkl"
 
-# Afficher les premières lignes pour vérifier le chargement
-print("Les premières lignes du dataset :")
-print(df.head())
+# 1. Charger et comprendre les données
+data = pd.read_csv('dataset.csv')  # Remplacez par le chemin vers votre fichier
 
-# Gérer les valeurs manquantes
-df = df.fillna(df.mean())  # Remplacer les valeurs manquantes par la moyenne des colonnes
+# Afficher les premières lignes pour comprendre la structure
+print("Aperçu des données :")
+print(data.head())
 
-# Afficher les données après traitement des valeurs manquantes
-print("Données après remplissage des valeurs manquantes :")
-print(df.head())
+# 2. Nettoyage et transformation des données
+# Gérer les valeurs manquantes (s'il y en a)
+data = data.dropna()
 
-# Normaliser les données si nécessaire
-scaler = StandardScaler()
-df_scaled = scaler.fit_transform(df)
+# Transformer les colonnes booléennes (0 ou 1) si nécessaire
+bool_columns = ['is_private', 'is_business_account', 'has_external_url', 'is_fake']
+for col in bool_columns:
+    data[col] = data[col].astype(int)
 
-# Afficher les données normalisées
-print("Données normalisées :")
-print(df_scaled[:5])  # Afficher les 5 premières lignes normalisées
+# 5. Sélectionner et créer des caractéristiques (features)
+# Ajout des variables manquantes : username_has_number, full_name_has_number
+features = ['edge_followed_by', 'edge_follow', 'username_length', 'full_name_length',
+            'is_private', 'is_business_account', 'has_external_url', 
+            'username_has_number', 'full_name_has_number']
 
-# Séparer les données en comptes réels et faux
-real_accounts = df[df['is_fake'] == 0]
-fake_accounts = df[df['is_fake'] == 1]
+X = data[features]
+y = data['is_fake']
 
-# Liste des variables à analyser
-variables = ['edge_followed_by', 'edge_follow', 'username_length', 'full_name_length', 'is_private', 
-             'is_joined_recently', 'has_channel', 'is_business_account', 'has_external_url']
+# 6. Appliquer le Random Oversampling pour augmenter la classe minoritaire
+real_accounts = data[data['is_fake'] == 0]
+fake_accounts = data[data['is_fake'] == 1]
 
-# Créer une figure pour les distributions de chaque variable
-plt.figure(figsize=(15, 10))
+# Sur-échantillonner les comptes réels
+real_accounts_oversampled = resample(real_accounts,
+                                     replace=True,  # Autoriser les doublons
+                                     n_samples=len(fake_accounts),  # Echantillonner jusqu'à égalité
+                                     random_state=42)
 
-# Parcourir les variables et créer des sous-graphes
-for i, var in enumerate(variables):
-    plt.subplot(3, 3, i+1)
-    sns.histplot(real_accounts[var], label='Real', color='blue', kde=True, stat="density")
-    sns.histplot(fake_accounts[var], label='Fake', color='red', kde=True, stat="density")
-    plt.legend()
-    plt.title(f'Distribution de {var}')
+# Combiner les comptes réels sur-échantillonnés et les faux comptes
+balanced_data = pd.concat([real_accounts_oversampled, fake_accounts])
 
-# Ajuster les espacements entre les sous-graphes
-plt.tight_layout()
-plt.show()
+X_balanced = balanced_data[features]
+y_balanced = balanced_data['is_fake']
 
-# Calcul des corrélations entre les variables et l'indicateur de faux comptes
-correlation_matrix = df.corr()
+# 7. Séparation des données en ensembles d'entraînement et de test
+X_train, X_test, y_train, y_test = train_test_split(X_balanced, y_balanced, test_size=0.2, random_state=42)
 
-# Visualiser la matrice de corrélation
-plt.figure(figsize=(12, 8))
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
-plt.title("Matrice de corrélation des variables")
-plt.show()
+# 8. Entraîner et sauvegarder le modèle seulement s'il n'est pas déjà sauvegardé
+if not os.path.exists(model_filename):
+    print("Entraînement du modèle...")
+    tree_model = DecisionTreeClassifier(random_state=42)
+    tree_model.fit(X_train, y_train)
+
+    # Sauvegarder le modèle entraîné
+    joblib.dump(tree_model, model_filename)
+    print(f"Modèle sauvegardé sous {model_filename}.")
+else:
+    # Charger le modèle sauvegardé
+    print(f"Chargement du modèle depuis {model_filename}...")
+    tree_model = joblib.load(model_filename)
+
+# Évaluer le modèle
+y_pred = tree_model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+classification_rep = classification_report(y_test, y_pred)
+print(f"Précision (Accuracy) : {accuracy:.2f}")
+print("Rapport de classification :")
+print(classification_rep)
+
+
+""" 10. Web scraping avec Instaloader pour tester un compte Instagram
+
+def get_instagram_profile_data(username):
+    L = instaloader.Instaloader()
+    profile = instaloader.Profile.from_username(L.context, username)
+    
+    # Extraire les informations pertinentes (sans has_channel, has_guides, is_joined_recently)
+    profile_data = {
+        'edge_followed_by': profile.followers / 1000,  # Normaliser en milliers
+        'edge_follow': profile.followees / 1000,  # Normaliser en milliers
+        'username_length': len(profile.username),
+        'full_name_length': len(profile.full_name),
+        'is_private': int(profile.is_private),
+        'is_business_account': int(profile.is_business_account),
+        'has_external_url': int(profile.external_url is not None),
+        'username_has_number': int(any(char.isdigit() for char in profile.username)),
+        'full_name_has_number': int(any(char.isdigit() for char in profile.full_name))
+    }
+    
+    return profile_data
+
+# Fonction pour prédire si un compte est faux ou réel
+def predict_fake_or_real(username):
+    profile_data = get_instagram_profile_data(username)
+    
+    # Convertir les données dans un format compatible avec le modèle
+    input_data = pd.DataFrame([profile_data])
+    
+    # Prédire avec le modèle chargé
+    prediction = tree_model.predict(input_data)
+    
+    if prediction[0] == 1:
+        return f"Le compte {username} est probablement un faux compte."
+    else:
+        return f"Le compte {username} est probablement un vrai compte."
+
+# Demander à l'utilisateur de saisir un nom d'utilisateur Instagram
+username_input = input("Veuillez entrer un nom d'utilisateur Instagram pour analyse : ")
+
+# Appeler la fonction de prédiction
+result = predict_fake_or_real(username_input)
+print(result)"""

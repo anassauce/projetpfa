@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vérification de Compte Instagram</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Vérification de Compte Instagram</h1>
+        <form method="POST">
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur Instagram :</label>
+                <input type="text" id="username" name="username" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Vérifier</button>
+        </form>
+
+        {% if result %}
+        <div class="mt-4 alert alert-info">
+            {{ result }}
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
